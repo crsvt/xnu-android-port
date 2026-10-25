@@ -15,6 +15,9 @@ on:
       keep_going:
         description: make -k (collect all compile errors in one run)
         default: "true"
+      kernel_ref:
+        description: ONCLITE kernel source, branch or commit of crsvt/xnu-android-kernel
+        default: onclite
   push:
     # onclite-ci: the Redmi 7 port builds MACHINE_CONFIG=ONCLITE (main stays SWEET)
     branches: [main, onclite-ci]
@@ -32,6 +35,8 @@ env:
   MACOS_VERSION: ${{ inputs.macos_version || '13.5' }}
   KERNEL_CONFIG: ${{ inputs.kernel_config || 'DEVELOPMENT' }}
   MACHINE_CONFIG: ${{ inputs.machine_config || (github.ref == 'refs/heads/onclite-ci' && 'ONCLITE') || 'SWEET' }}
+  KERNEL_REPO: https://github.com/crsvt/xnu-android-kernel
+  KERNEL_REF: ${{ inputs.kernel_ref || 'onclite' }}
 
 jobs:
   build:
@@ -47,8 +52,18 @@ jobs:
           git init -q dxb
           git -C dxb fetch -q --depth 1 "$DXB_REPO" "$DXB_SHA"
           git -C dxb checkout -q FETCH_HEAD
-          # 12.5-14.3 use the top-level patches dir; ours go next to blacktop's
-          cp xnu/patches/*.patch xnu/patches/*.sh dxb/patches/
+          if [ "$MACHINE_CONFIG" = ONCLITE ]; then
+            # The ONCLITE kernel is a source tree (Apple xnu-8796.141.3 + the port's
+            # commits): build.sh uses an existing dxb/xnu instead of cloning Apple's,
+            # and still applies its own build-environment patches on top.
+            git clone -q --depth 1 --branch "$KERNEL_REF" "$KERNEL_REPO" dxb/xnu ||
+              { git init -q dxb/xnu && git -C dxb/xnu fetch -q --depth 1 "$KERNEL_REPO" "$KERNEL_REF" &&
+                git -C dxb/xnu checkout -q FETCH_HEAD; }
+            echo "kernel source: $KERNEL_REPO @ $(git -C dxb/xnu rev-parse HEAD)"
+          else
+            # 12.5-14.3 use the top-level patches dir; ours go next to blacktop's
+            cp xnu/patches/*.patch xnu/patches/*.sh dxb/patches/
+          fi
           # libfirehose_kernel is built arm64e-only; the SWEET kernel is plain arm64
           sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"/' dxb/build.sh
           grep -c 'VALID_ARCHS="x86_64 arm64e arm64"' dxb/build.sh
