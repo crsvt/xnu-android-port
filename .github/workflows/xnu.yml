@@ -18,6 +18,9 @@ on:
       kernel_ref:
         description: ONCLITE kernel source, branch or commit of crsvt/xnu-android-kernel
         default: onclite
+      runner:
+        description: macOS runner image (must provide Xcode 15)
+        default: macos-14
   push:
     # onclite-ci: the Redmi 7 port builds MACHINE_CONFIG=ONCLITE (main stays SWEET)
     branches: [main, onclite-ci]
@@ -42,7 +45,7 @@ jobs:
   build:
     # macos-14 still ships Xcode 15.x: its iig matches the xnu-8796 IORPC ABI
     # (Xcode 16's iig emits IORPC.kernelContent, which this xnu lacks)
-    runs-on: macos-14
+    runs-on: ${{ inputs.runner || 'macos-14' }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -94,7 +97,8 @@ jobs:
           sudo chmod +x /usr/local/bin/xcodes
           sw_vers
           ls -d /Applications/Xcode*.app
-          XC=$(ls -d /Applications/Xcode_*.app | sort -V | head -1)
+          XC=$(ls -d /Applications/Xcode_15*.app 2>/dev/null | sort -V | head -1)
+          [ -n "$XC" ] || { echo "::error::no Xcode 15 on this runner image"; exit 1; }
           echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
           sudo xcode-select -s "$XC"
           xcodebuild -version
